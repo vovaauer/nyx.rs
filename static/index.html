@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nyx.rs - Private Relay</title>
+    <style>
+        body { font-family: monospace; background-color: #1a1a1a; color: #f0f0f0; max-width: 800px; margin: 40px auto; padding: 20px; }
+        h1, h2 { color: #00ff7f; }
+        label { display: block; margin-top: 15px; }
+        input, select, button { background-color: #333; color: #f0f0f0; border: 1px solid #555; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border-radius: 3px; }
+        button { background-color: #00ff7f; color: #1a1a1a; cursor: pointer; font-weight: bold; }
+        a { color: #00ff7f; }
+        hr { border: 0; border-top: 1px solid #333; margin: 20px 0; }
+        footer { margin-top: 40px; font-size: 0.8em; text-align: center; color: #888; }
+        code { background-color: #333; padding: 2px 5px; border-radius: 3px; }
+        pre { background-color: #222; padding: 10px; border-radius: 3px; white-space: pre-wrap; word-wrap: break-word; }
+        .result-box { margin-top: 15px; padding: 10px; border-radius: 3px; }
+        .result-box.success { background-color: #0f3d1f; border: 1px solid #00ff7f; }
+        .result-box.error { background-color: #4d1a1a; border: 1px solid #ff4d4d; }
+    </style>
+</head>
+<body>
+
+    <h1>nyx.rs</h1>
+    <p>A simple, private, no-account service relay.</p>
+    <p>We are currently in a free, pre-payment testing phase. This will change once we integrate Monero payments.</p>
+
+    <hr>
+
+    <h2>New Order</h2>
+    <form id="order-form">
+        <label for="service_id">Service:</label>
+        <select id="service_id" name="service_id" required>
+            <option value="">Loading services...</option>
+        </select>
+        
+        <label for="link">Link:</label>
+        <input type="url" id="link" name="link" placeholder="https://..." required>
+
+        <label for="quantity">Quantity:</label>
+        <input type="number" id="quantity" name="quantity" placeholder="e.g., 1000" required>
+
+        <button type="submit">Place Order</button>
+    </form>
+    <div id="order-result"></div>
+
+    <hr>
+
+    <h2>Check Order Status</h2>
+    <form id="status-form">
+        <label for="order_id">Order ID:</label>
+        <input type="text" id="order_id" name="order_id" placeholder="Enter your order UUID" required>
+        <button type="submit">Check Status</button>
+    </form>
+    <pre id="status-result"></pre>
+
+    <footer>
+        <p><a href="/privacy.html">Privacy Policy</a> | <a href="/faq.html">FAQ</a></p>
+        <p>Contact: <a href="mailto:your-email@example.com">your-email@example.com</a></p>
+        <p>This service is Open Source. <a href="[your-github-link-will-go-here]">View on GitHub</a></p>
+        <p>Tor Onion Service: <a href="http://v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion">v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion</a></p>
+    </footer>
+
+    <script>
+        // Wait for the page to be fully loaded before running scripts
+        document.addEventListener('DOMContentLoaded', () => {
+            const serviceSelect = document.getElementById('service_id');
+            const orderForm = document.getElementById('order-form');
+            const orderResultDiv = document.getElementById('order-result');
+            const statusForm = document.getElementById('status-form');
+            const statusResultDiv = document.getElementById('status-result');
+
+            // --- 1. Fetch and Populate Services ---
+            async function fetchServices() {
+                try {
+                    const response = await fetch('/api/services');
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    const services = await response.json();
+
+                    // Clear the "Loading..." option
+                    serviceSelect.innerHTML = ''; 
+
+                    if (services.length === 0) {
+                        serviceSelect.innerHTML = '<option value="">No services available</option>';
+                        return;
+                    }
+
+                    // Populate the dropdown with services from the API
+                    services.forEach(service => {
+                        const option = document.createElement('option');
+                        option.value = service.service;
+                        // Format: "Service Name (Rate: $0.90, Min: 50, Max: 10000)"
+                        option.textContent = `${service.name} (Rate: ${service.rate}, Min: ${service.min}, Max: ${service.max})`;
+                        serviceSelect.appendChild(option);
+                    });
+
+                } catch (error) {
+                    console.error('Failed to fetch services:', error);
+                    serviceSelect.innerHTML = '<option value="">Error loading services</option>';
+                }
+            }
+
+            // --- 2. Handle New Order Submission ---
+            orderForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                orderResultDiv.className = 'result-box';
+                orderResultDiv.textContent = 'Submitting...';
+
+                try {
+                    const response = await fetch('/api/order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            service_id: parseInt(serviceSelect.value),
+                            link: document.getElementById('link').value,
+                            quantity: parseInt(document.getElementById('quantity').value)
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        orderResultDiv.className = 'result-box success';
+                        orderResultDiv.innerHTML = `<strong>Success!</strong> Please save your Order ID: <code>${data.order_id}</code>`;
+                    } else {
+                        throw new Error(data.error || 'Failed to create order');
+                    }
+                } catch (error) {
+                    orderResultDiv.className = 'result-box error';
+                    orderResultDiv.textContent = `Error: ${error.message}`;
+                }
+            });
+
+            // --- 3. Handle Status Check Submission ---
+            statusForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const orderId = document.getElementById('order_id').value;
+                statusResultDiv.textContent = 'Fetching status...';
+                
+                try {
+                    const response = await fetch(`/api/status/${orderId}`);
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        statusResultDiv.textContent = JSON.stringify(data, null, 2);
+                    } else {
+                        throw new Error(data.error || 'Order not found');
+                    }
+                } catch (error) {
+                    statusResultDiv.textContent = `Error: ${error.message}`;
+                }
+            });
+
+            // --- Run the service fetcher when the page loads ---
+            fetchServices();
+        });
+    </script>
+</body>
+</html>
