@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="description" content="The official NYX Relay Store. A private, no-account, KYC-free service relay for anonymous payments using Monero (XMR) and other payment methods.">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nyx.rs - Private Relay</title>
+    <title>NYX.RS - The NYX Relay Store</title>
     <style>
         body { font-family: monospace; background-color: #1a1a1a; color: #f0f0f0; max-width: 800px; margin: 40px auto; padding: 20px; }
         h1, h2 { color: #00ff7f; }
@@ -18,6 +19,30 @@
         .result-box.success { background-color: #0f3d1f; border: 1px solid #00ff7f; }
         .result-box.error { background-color: #4d1a1a; border: 1px solid #ff4d4d; }
         .payment-info { padding: 15px; border: 1px dashed #00ff7f; margin-top: 15px; }
+        .copy-btn { 
+            background-color: #555; 
+            color: #f0f0f0; 
+            border: 1px solid #777; 
+            padding: 2px 8px; 
+            margin-left: 10px; 
+            cursor: pointer; 
+            font-size: 12px;
+            width: auto; /* Override the default width: 100% for buttons */
+        }
+        .exchange-info {
+            margin-top: 25px;
+            padding: 15px;
+            border: 1px solid #555;
+            border-radius: 3px;
+            background-color: #222;
+        }
+        .exchange-info h4 {
+            margin-top: 0;
+            color: #ccc;
+        }
+        .exchange-info ol {
+            padding-left: 20px;
+        }
     </style>
 </head>
 <body>
@@ -61,16 +86,37 @@
             const statusResultDiv = document.getElementById('status-result');
             let structuredServicesData = {};
 
+            // Helper function to copy text to clipboard
+            function copyToClipboard(text, element) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalText = element.textContent;
+                    element.textContent = 'Copied!';
+                    setTimeout(() => { element.textContent = originalText; }, 1500);
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                });
+            }
+
+            // Helper function to show errors gracefully
+            function displayError(container, message) {
+                container.className = 'result-box error';
+                container.textContent = `Error: ${message}`;
+            }
+
             async function initializeServiceSelector() {
                 try {
                     const response = await fetch('/api/structured-services');
-                    if (!response.ok) throw new Error('Network response was not ok');
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(errorText || 'Failed to load services. The provider might be down.');
+                    }
                     structuredServicesData = await response.json();
                     const platforms = Object.keys(structuredServicesData).sort();
                     platformSelect.innerHTML = '<option value="">-- Select a Platform --</option>';
                     platforms.forEach(p => platformSelect.add(new Option(p, p)));
                 } catch (error) {
-                    platformSelect.innerHTML = '<option value="">Error loading services</option>';
+                    platformSelect.innerHTML = `<option value="">${error.message}</option>`;
+                    platformSelect.disabled = true;
                 }
             }
 
@@ -114,19 +160,38 @@
                     });
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.message || 'Failed to create order');
+                    
                     orderResultDiv.className = 'result-box success';
+
                     orderResultDiv.innerHTML = `
                         <div class="payment-info">
                             <h3>Please send payment to complete your order</h3>
                             <p><strong>Amount:</strong> <code>${data.xmr_amount} XMR</code></p>
-                            <p><strong>Address:</strong> <code>${data.payment_address}</code></p>
+                            <p><strong>Address:</strong> <code>${data.payment_address}</code> <button class="copy-btn" data-copy="${data.payment_address}">Copy</button></p>
                             <p>Please send the exact amount. Your order will be processed after payment is confirmed (~2-20 minutes).</p>
-                            <p><strong>Save your Order ID:</strong> <code>${data.order_id}</code></p>
+                            <p><strong>Save your Order ID:</strong> <code>${data.order_id}</code> <button class="copy-btn" data-copy="${data.order_id}">Copy</button></p>
+                        </div>
+
+                        <div class="exchange-info">
+                            <h4>Don't have Monero (XMR)?</h4>
+                            <p>
+                                You can use an instant, no-account exchange service to pay this invoice with another payment method (like PayPal, Skrill, Wise, Bank transfer, Revolut, etc.).
+                            </p>
+                            <ol>
+                                <li>Go to an exchange aggregator like <a href="https://www.bestchange.com/?p=1334412" target="_blank">BestChange.com</a>.</li>
+                                <li>Select the currency you want to <strong>Send</strong> and choose <strong>Monero (XMR)</strong> as the currency you want to <strong>Receive</strong>.</li>
+                                <li>Choose an exchange from the list.</li>
+                                <li>When the exchange asks for the "Receiving Monero Address", paste the address from above.</li>
+                                <li>Send the payment as instructed by the exchange. We will process your order as soon as we receive the Monero.</li>
+                            </ol>
                         </div>
                     `;
+                    // Add event listeners to the new copy buttons
+                    orderResultDiv.querySelectorAll('.copy-btn').forEach(button => {
+                        button.addEventListener('click', () => copyToClipboard(button.dataset.copy, button));
+                    });
                 } catch (error) {
-                    orderResultDiv.className = 'result-box error';
-                    orderResultDiv.textContent = `Error: ${error.message}`;
+                    displayError(orderResultDiv, error.message);
                 }
             });
 
@@ -136,7 +201,7 @@
                 statusResultDiv.textContent = 'Fetching status...';
                 try {
                     const response = await fetch(`/api/status/${orderId}`);
-                    const text = await response.text();
+                    const text = await response.text(); // Get text first for better error messages
                     if (!response.ok) throw new Error(text || "Failed to fetch status");
                     statusResultDiv.textContent = text;
                 } catch (error) {
@@ -147,5 +212,16 @@
             initializeServiceSelector();
         });
     </script>
+
+    <hr>
+    <footer>
+        <p style="text-align: center; line-height: 1.6;">
+            <a href="https://t.me/nyxrelaystore" target="_blank">Telegram Support</a> | 
+            <a href="/policy.html">Policy & Terms</a> | 
+            <a href="/faq.html">FAQ</a>
+            <br>
+            Tor Mirror: <a href="http://v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion">v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion</a>
+        </p>
+    </footer>
 </body>
 </html>

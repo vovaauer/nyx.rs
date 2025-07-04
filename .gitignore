@@ -1,2 +1,19 @@
 /target
 .env
+
+
+# Secrets and environment variables
+.env
+
+# Database file
+*.db
+*.db-journal
+
+# Rust build artifacts and cache
+/target/
+Cargo.lock
+
+# IDE and editor configuration
+.idea/
+.vscode/
+*.swp
