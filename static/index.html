@@ -9,44 +9,39 @@
         h1, h2 { color: #00ff7f; }
         label { display: block; margin-top: 15px; }
         input, select, button { background-color: #333; color: #f0f0f0; border: 1px solid #555; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; border-radius: 3px; }
+        select:disabled { background-color: #2a2a2a; color: #666; }
         button { background-color: #00ff7f; color: #1a1a1a; cursor: pointer; font-weight: bold; }
-        a { color: #00ff7f; }
         hr { border: 0; border-top: 1px solid #333; margin: 20px 0; }
-        footer { margin-top: 40px; font-size: 0.8em; text-align: center; color: #888; }
-        code { background-color: #333; padding: 2px 5px; border-radius: 3px; }
+        code { background-color: #333; padding: 2px 5px; border-radius: 3px; word-wrap: break-word; }
         pre { background-color: #222; padding: 10px; border-radius: 3px; white-space: pre-wrap; word-wrap: break-word; }
         .result-box { margin-top: 15px; padding: 10px; border-radius: 3px; }
         .result-box.success { background-color: #0f3d1f; border: 1px solid #00ff7f; }
         .result-box.error { background-color: #4d1a1a; border: 1px solid #ff4d4d; }
+        .payment-info { padding: 15px; border: 1px dashed #00ff7f; margin-top: 15px; }
     </style>
 </head>
 <body>
-
     <h1>nyx.rs</h1>
     <p>A simple, private, no-account service relay.</p>
-    <p>We are currently in a free, pre-payment testing phase. This will change once we integrate Monero payments.</p>
-
     <hr>
-
-    <h2>New Order</h2>
-    <form id="order-form">
-        <label for="service_id">Service:</label>
-        <select id="service_id" name="service_id" required>
-            <option value="">Loading services...</option>
-        </select>
-        
-        <label for="link">Link:</label>
-        <input type="url" id="link" name="link" placeholder="https://..." required>
-
-        <label for="quantity">Quantity:</label>
-        <input type="number" id="quantity" name="quantity" placeholder="e.g., 1000" required>
-
-        <button type="submit">Place Order</button>
-    </form>
+    <div id="form-container">
+        <h2>New Order</h2>
+        <form id="order-form">
+            <label for="platform-select">Platform:</label>
+            <select id="platform-select" required><option value="">Loading Platforms...</option></select>
+            <label for="type-select">Service Type:</label>
+            <select id="type-select" required disabled><option value="">Select a Platform First</option></select>
+            <label for="service-select">Service Variant:</label>
+            <select name="service_id" id="service-select" required disabled><option value="">Select a Service Type First</option></select>
+            <label for="link">Link:</label>
+            <input type="url" id="link" name="link" placeholder="https://..." required>
+            <label for="quantity">Quantity:</label>
+            <input type="number" id="quantity" name="quantity" placeholder="e.g., 1000" required>
+            <button type="submit">Get Payment Address</button>
+        </form>
+    </div>
     <div id="order-result"></div>
-
     <hr>
-
     <h2>Check Order Status</h2>
     <form id="status-form">
         <label for="order_id">Order ID:</label>
@@ -55,107 +50,101 @@
     </form>
     <pre id="status-result"></pre>
 
-    <footer>
-        <p><a href="/privacy.html">Privacy Policy</a> | <a href="/faq.html">FAQ</a></p>
-        <p>Contact: <a href="mailto:your-email@example.com">your-email@example.com</a></p>
-        <p>This service is Open Source. <a href="[your-github-link-will-go-here]">View on GitHub</a></p>
-        <p>Tor Onion Service: <a href="http://v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion">v5bupsqkgnfmg5owfhiw4lswntqfwilvxivqfxbmswiwcwie2fwee2id.onion</a></p>
-    </footer>
-
     <script>
-        // Wait for the page to be fully loaded before running scripts
         document.addEventListener('DOMContentLoaded', () => {
-            const serviceSelect = document.getElementById('service_id');
+            const platformSelect = document.getElementById('platform-select');
+            const typeSelect = document.getElementById('type-select');
+            const serviceSelect = document.getElementById('service-select');
             const orderForm = document.getElementById('order-form');
             const orderResultDiv = document.getElementById('order-result');
             const statusForm = document.getElementById('status-form');
             const statusResultDiv = document.getElementById('status-result');
+            let structuredServicesData = {};
 
-            // --- 1. Fetch and Populate Services ---
-            async function fetchServices() {
+            async function initializeServiceSelector() {
                 try {
-                    const response = await fetch('/api/services');
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    const services = await response.json();
-
-                    // Clear the "Loading..." option
-                    serviceSelect.innerHTML = ''; 
-
-                    if (services.length === 0) {
-                        serviceSelect.innerHTML = '<option value="">No services available</option>';
-                        return;
-                    }
-
-                    // Populate the dropdown with services from the API
-                    services.forEach(service => {
-                        const option = document.createElement('option');
-                        option.value = service.service;
-                        // Format: "Service Name (Rate: $0.90, Min: 50, Max: 10000)"
-                        option.textContent = `${service.name} (Rate: ${service.rate}, Min: ${service.min}, Max: ${service.max})`;
-                        serviceSelect.appendChild(option);
-                    });
-
+                    const response = await fetch('/api/structured-services');
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    structuredServicesData = await response.json();
+                    const platforms = Object.keys(structuredServicesData).sort();
+                    platformSelect.innerHTML = '<option value="">-- Select a Platform --</option>';
+                    platforms.forEach(p => platformSelect.add(new Option(p, p)));
                 } catch (error) {
-                    console.error('Failed to fetch services:', error);
-                    serviceSelect.innerHTML = '<option value="">Error loading services</option>';
+                    platformSelect.innerHTML = '<option value="">Error loading services</option>';
                 }
             }
 
-            // --- 2. Handle New Order Submission ---
+            platformSelect.addEventListener('change', () => {
+                const selectedPlatform = platformSelect.value;
+                typeSelect.innerHTML = '<option value="">-- Select a Service Type --</option>';
+                serviceSelect.innerHTML = '<option value="">-- Select a Service Type First --</option>';
+                typeSelect.disabled = true;
+                serviceSelect.disabled = true;
+                if (!selectedPlatform) return;
+                const servicesForPlatform = structuredServicesData[selectedPlatform];
+                const types = [...new Set(servicesForPlatform.map(s => s.service_type))].sort();
+                types.forEach(t => typeSelect.add(new Option(t, t)));
+                typeSelect.disabled = false;
+            });
+
+            typeSelect.addEventListener('change', () => {
+                const selectedPlatform = platformSelect.value;
+                const selectedType = typeSelect.value;
+                serviceSelect.innerHTML = '<option value="">-- Select a Variant --</option>';
+                serviceSelect.disabled = true;
+                if (!selectedType) return;
+                const services = structuredServicesData[selectedPlatform].filter(s => s.service_type === selectedType);
+                services.forEach(s => serviceSelect.add(new Option(`${s.variant} (Rate: ${s.rate}, Min: ${s.min}, Max: ${s.max})`, s.id)));
+                serviceSelect.disabled = false;
+            });
+
             orderForm.addEventListener('submit', async function (e) {
                 e.preventDefault();
                 orderResultDiv.className = 'result-box';
-                orderResultDiv.textContent = 'Submitting...';
-
+                orderResultDiv.textContent = 'Creating order and generating payment address...';
                 try {
-                    const response = await fetch('/api/order', {
+                    const response = await fetch('/api/create-order', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            service_id: parseInt(serviceSelect.value),
+                            service_id: serviceSelect.value,
                             link: document.getElementById('link').value,
                             quantity: parseInt(document.getElementById('quantity').value)
                         })
                     });
-
                     const data = await response.json();
-
-                    if (response.ok) {
-                        orderResultDiv.className = 'result-box success';
-                        orderResultDiv.innerHTML = `<strong>Success!</strong> Please save your Order ID: <code>${data.order_id}</code>`;
-                    } else {
-                        throw new Error(data.error || 'Failed to create order');
-                    }
+                    if (!response.ok) throw new Error(data.message || 'Failed to create order');
+                    orderResultDiv.className = 'result-box success';
+                    orderResultDiv.innerHTML = `
+                        <div class="payment-info">
+                            <h3>Please send payment to complete your order</h3>
+                            <p><strong>Amount:</strong> <code>${data.xmr_amount} XMR</code></p>
+                            <p><strong>Address:</strong> <code>${data.payment_address}</code></p>
+                            <p>Please send the exact amount. Your order will be processed after payment is confirmed (~2-20 minutes).</p>
+                            <p><strong>Save your Order ID:</strong> <code>${data.order_id}</code></p>
+                        </div>
+                    `;
                 } catch (error) {
                     orderResultDiv.className = 'result-box error';
                     orderResultDiv.textContent = `Error: ${error.message}`;
                 }
             });
 
-            // --- 3. Handle Status Check Submission ---
             statusForm.addEventListener('submit', async function (e) {
                 e.preventDefault();
                 const orderId = document.getElementById('order_id').value;
                 statusResultDiv.textContent = 'Fetching status...';
-                
                 try {
                     const response = await fetch(`/api/status/${orderId}`);
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        statusResultDiv.textContent = JSON.stringify(data, null, 2);
-                    } else {
-                        throw new Error(data.error || 'Order not found');
-                    }
+                    const text = await response.text();
+                    if (!response.ok) throw new Error(text || "Failed to fetch status");
+                    statusResultDiv.textContent = text;
                 } catch (error) {
                     statusResultDiv.textContent = `Error: ${error.message}`;
                 }
             });
 
-            // --- Run the service fetcher when the page loads ---
-            fetchServices();
+            initializeServiceSelector();
         });
     </script>
 </body>
